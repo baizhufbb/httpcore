@@ -307,14 +307,15 @@ class TunnelHTTPConnection(ConnectionInterface):
                 alpn_protocols = ["http/1.1", "h2"] if self._http2 else ["http/1.1"]
                 ssl_context.set_alpn_protocols(alpn_protocols)
 
-                kwargs = {
-                    "ssl_context": ssl_context,
-                    "server_hostname": self._remote_origin.host.decode("ascii"),
-                    "timeout": timeout,
-                }
-                with Trace("start_tls", logger, request, kwargs) as trace:
-                    stream = stream.start_tls(**kwargs)
-                    trace.return_value = stream
+                try:
+                    with Trace("start_tls", logger, request, kwargs) as trace:
+                        stream = stream.start_tls(**kwargs)
+                        trace.return_value = stream
+                except Exception:
+                    # Close the underlying connection when TLS handshake fails to avoid
+                    # zombie connections occupying the connection pool
+                    self._connection.close()
+                    raise
 
                 # Determine if we should be using HTTP/1.1 or HTTP/2
                 ssl_object = stream.get_extra_info("ssl_object")
